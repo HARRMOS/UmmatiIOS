@@ -1791,6 +1791,32 @@ app.put('/api/user/profile', authenticateJWT, async (req, res) => {
     console.log('userId:', userId);
     console.log('username:', username);
     console.log('profile_picture:', profile_picture ? '[image]' : null);
+    
+    // Vérifier si la colonne profile_picture existe dans la table users
+    let profilePictureColumnExists = false;
+    try {
+      const [columns] = await mysqlPool.execute(
+        `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = 'profile_picture'`
+      );
+      profilePictureColumnExists = columns.length > 0;
+    } catch (err) {
+      console.log('Erreur lors de la vérification de la colonne profile_picture:', err);
+    }
+    
+    // Si la colonne n'existe pas et qu'on essaie de la mettre à jour, la créer
+    if (profile_picture && !profilePictureColumnExists) {
+      try {
+        await mysqlPool.execute(
+          `ALTER TABLE users ADD COLUMN profile_picture TEXT NULL`
+        );
+        console.log('Colonne profile_picture ajoutée à la table users');
+        profilePictureColumnExists = true;
+      } catch (alterError) {
+        console.error('Erreur lors de l\'ajout de la colonne profile_picture:', alterError);
+        // On continue quand même, on ne mettra juste pas à jour profile_picture
+      }
+    }
+    
     if (!username && !profile_picture) {
       return res.status(400).json({ success: false, message: 'Aucune donnée à mettre à jour.' });
     }
@@ -1800,7 +1826,7 @@ app.put('/api/user/profile', authenticateJWT, async (req, res) => {
       fields.push('username = ?');
       values.push(username);
     }
-    if (profile_picture) {
+    if (profile_picture && profilePictureColumnExists) {
       fields.push('profile_picture = ?');
       values.push(profile_picture);
     }
