@@ -2045,13 +2045,18 @@ app.post('/api/spotify/token', authenticateJWT, requireAdmin, async (req, res) =
     const SPOTIFY_CLIENT_ID = process.env.SPOTIFY_CLIENT_ID;
     const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
 
+    console.log('🔐 [Spotify] Demande de token - Client ID présent:', !!SPOTIFY_CLIENT_ID, 'Client Secret présent:', !!SPOTIFY_CLIENT_SECRET);
+
     if (!SPOTIFY_CLIENT_ID || !SPOTIFY_CLIENT_SECRET) {
+      console.error('❌ [Spotify] Configuration manquante');
       return res.status(500).json({ 
-        error: 'Configuration Spotify manquante. Veuillez configurer SPOTIFY_CLIENT_ID et SPOTIFY_CLIENT_SECRET dans les variables d\'environnement.' 
+        error: 'Configuration Spotify manquante. Veuillez configurer SPOTIFY_CLIENT_ID et SPOTIFY_CLIENT_SECRET dans les variables d\'environnement.',
+        message: 'Les credentials Spotify ne sont pas configurés dans le backend.'
       });
     }
 
     // Obtenir un token d'accès Spotify via Client Credentials Flow
+    console.log('🔄 [Spotify] Demande de token à Spotify...');
     const response = await fetch('https://accounts.spotify.com/api/token', {
       method: 'POST',
       headers: {
@@ -2061,22 +2066,58 @@ app.post('/api/spotify/token', authenticateJWT, requireAdmin, async (req, res) =
       body: 'grant_type=client_credentials'
     });
 
+    const responseText = await response.text();
+    console.log('📡 [Spotify] Réponse Spotify - Status:', response.status, 'OK:', response.ok);
+
     if (!response.ok) {
-      const error = await response.text();
-      console.error('❌ [Spotify] Erreur obtention token:', error);
+      let errorData;
+      try {
+        errorData = JSON.parse(responseText);
+      } catch {
+        errorData = { error: responseText || `HTTP ${response.status}` };
+      }
+      
+      console.error('❌ [Spotify] Erreur Spotify API:', {
+        status: response.status,
+        statusText: response.statusText,
+        error: errorData
+      });
+      
       return res.status(response.status).json({ 
-        error: 'Erreur lors de l\'obtention du token Spotify',
-        details: error
+        error: errorData.error || 'Erreur lors de l\'obtention du token Spotify',
+        message: errorData.error_description || errorData.error || `Erreur HTTP ${response.status}`,
+        details: errorData
       });
     }
 
-    const data = await response.json();
+    let data;
+    try {
+      data = JSON.parse(responseText);
+    } catch (parseError) {
+      console.error('❌ [Spotify] Erreur parsing réponse:', parseError);
+      return res.status(500).json({ 
+        error: 'Erreur lors du parsing de la réponse Spotify',
+        message: 'Réponse invalide reçue de Spotify'
+      });
+    }
+
+    if (!data.access_token) {
+      console.error('❌ [Spotify] Token non présent dans la réponse:', data);
+      return res.status(500).json({ 
+        error: 'Token d\'accès non reçu',
+        message: 'La réponse de Spotify ne contient pas de token d\'accès'
+      });
+    }
+
+    console.log('✅ [Spotify] Token obtenu avec succès');
     res.json(data);
   } catch (error) {
-    console.error('❌ [Spotify] Erreur:', error);
+    console.error('❌ [Spotify] Erreur serveur:', error);
+    console.error('❌ [Spotify] Stack:', error.stack);
     res.status(500).json({ 
       error: 'Erreur serveur lors de l\'obtention du token Spotify',
-      message: error.message
+      message: error.message || 'Erreur inconnue',
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 });
