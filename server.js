@@ -1927,10 +1927,49 @@ app.post('/admin/bots/:botId/toggle', authenticateJWT, requireAdmin, async (req,
 });
 // Statistiques globales
 // ===================== ROUTES NASHEEDS =====================
+// Fonction pour créer la table nasheeds si elle n'existe pas
+async function ensureNasheedsTable() {
+  try {
+    await mysqlPool.execute('SELECT 1 FROM nasheeds LIMIT 1');
+    console.log('✅ [Backend] Table nasheeds existe');
+  } catch (tableError) {
+    if (tableError.code === 'ER_NO_SUCH_TABLE') {
+      console.log('⚠️ [Backend] Table nasheeds n\'existe pas, création...');
+      await mysqlPool.execute(`
+        CREATE TABLE IF NOT EXISTS nasheeds (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          title VARCHAR(255) NOT NULL COMMENT 'Titre du nasheed',
+          artist VARCHAR(255) DEFAULT NULL COMMENT 'Artiste/Chanteur',
+          audio_url VARCHAR(500) NOT NULL COMMENT 'URL de l''audio',
+          cover_image_url VARCHAR(500) DEFAULT NULL COMMENT 'URL de l''image de couverture',
+          description TEXT DEFAULT NULL COMMENT 'Description du nasheed',
+          duration INT DEFAULT NULL COMMENT 'Durée en secondes',
+          category VARCHAR(100) DEFAULT 'general' COMMENT 'Catégorie (general, praise, dua, etc.)',
+          language VARCHAR(50) DEFAULT 'ar' COMMENT 'Langue (ar, en, fr, etc.)',
+          is_active BOOLEAN DEFAULT TRUE COMMENT 'Nasheed actif ou non',
+          created_by VARCHAR(36) DEFAULT NULL COMMENT 'ID de l''admin qui a créé',
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          INDEX idx_category (category),
+          INDEX idx_language (language),
+          INDEX idx_is_active (is_active),
+          INDEX idx_created_at (created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        COMMENT='Table des nasheeds disponibles dans la bibliothèque'
+      `);
+      console.log('✅ [Backend] Table nasheeds créée avec succès');
+    } else {
+      console.error('❌ [Backend] Erreur lors de la vérification de la table:', tableError);
+      throw tableError;
+    }
+  }
+}
+
 // Récupérer tous les nasheeds actifs
 app.get('/api/nasheeds', authenticateJWT, async (req, res) => {
   try {
     console.log('📥 [Backend] Récupération nasheeds');
+    await ensureNasheedsTable();
     const [rows] = await mysqlPool.execute(
       'SELECT * FROM nasheeds WHERE is_active = TRUE ORDER BY created_at DESC'
     );
@@ -1963,39 +2002,7 @@ app.post('/api/nasheeds', authenticateJWT, requireAdmin, async (req, res) => {
     console.log('📤 [Backend] Ajout nasheed - UserId:', userId);
     
     // Vérifier que la table existe, sinon la créer
-    try {
-      await mysqlPool.execute('SELECT 1 FROM nasheeds LIMIT 1');
-      console.log('✅ [Backend] Table nasheeds existe');
-    } catch (tableError: any) {
-      if (tableError.code === 'ER_NO_SUCH_TABLE') {
-        console.log('⚠️ [Backend] Table nasheeds n\'existe pas, création...');
-        await mysqlPool.execute(`
-          CREATE TABLE IF NOT EXISTS nasheeds (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            title VARCHAR(255) NOT NULL COMMENT 'Titre du nasheed',
-            artist VARCHAR(255) DEFAULT NULL COMMENT 'Artiste/Chanteur',
-            audio_url VARCHAR(500) NOT NULL COMMENT 'URL de l''audio',
-            cover_image_url VARCHAR(500) DEFAULT NULL COMMENT 'URL de l''image de couverture',
-            description TEXT DEFAULT NULL COMMENT 'Description du nasheed',
-            duration INT DEFAULT NULL COMMENT 'Durée en secondes',
-            category VARCHAR(100) DEFAULT 'general' COMMENT 'Catégorie (general, praise, dua, etc.)',
-            language VARCHAR(50) DEFAULT 'ar' COMMENT 'Langue (ar, en, fr, etc.)',
-            is_active BOOLEAN DEFAULT TRUE COMMENT 'Nasheed actif ou non',
-            created_by VARCHAR(36) DEFAULT NULL COMMENT 'ID de l''admin qui a créé',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            INDEX idx_category (category),
-            INDEX idx_language (language),
-            INDEX idx_is_active (is_active),
-            INDEX idx_created_at (created_at)
-          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-          COMMENT='Table des nasheeds disponibles dans la bibliothèque'
-        `);
-        console.log('✅ [Backend] Table nasheeds créée');
-      } else {
-        throw tableError;
-      }
-    }
+    await ensureNasheedsTable();
     
     const values = [
       title, 
