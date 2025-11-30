@@ -1807,13 +1807,31 @@ app.put('/api/user/profile', authenticateJWT, async (req, res) => {
     if (profile_picture && !profilePictureColumnExists) {
       try {
         await mysqlPool.execute(
-          `ALTER TABLE users ADD COLUMN profile_picture TEXT NULL`
+          `ALTER TABLE users ADD COLUMN profile_picture LONGTEXT NULL`
         );
-        console.log('Colonne profile_picture ajoutée à la table users');
+        console.log('Colonne profile_picture ajoutée à la table users (LONGTEXT)');
         profilePictureColumnExists = true;
       } catch (alterError) {
         console.error('Erreur lors de l\'ajout de la colonne profile_picture:', alterError);
         // On continue quand même, on ne mettra juste pas à jour profile_picture
+      }
+    }
+    
+    // Si la colonne existe mais est de type TEXT (trop petit), la modifier en LONGTEXT
+    if (profile_picture && profilePictureColumnExists) {
+      try {
+        const [columnInfo] = await mysqlPool.execute(
+          `SELECT DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = 'profile_picture'`
+        );
+        if (columnInfo.length > 0 && columnInfo[0].DATA_TYPE === 'text') {
+          await mysqlPool.execute(
+            `ALTER TABLE users MODIFY COLUMN profile_picture LONGTEXT NULL`
+          );
+          console.log('Colonne profile_picture modifiée en LONGTEXT');
+        }
+      } catch (alterError) {
+        console.error('Erreur lors de la modification de la colonne profile_picture:', alterError);
+        // On continue quand même
       }
     }
     
