@@ -2039,6 +2039,48 @@ app.post('/api/nasheeds', authenticateJWT, requireAdmin, async (req, res) => {
   }
 });
 
+// Route pour obtenir un token Spotify (proxy pour éviter d'exposer les credentials)
+app.post('/api/spotify/token', authenticateJWT, requireAdmin, async (req, res) => {
+  try {
+    const SPOTIFY_CLIENT_ID = process.env.SPOTIFY_CLIENT_ID;
+    const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
+
+    if (!SPOTIFY_CLIENT_ID || !SPOTIFY_CLIENT_SECRET) {
+      return res.status(500).json({ 
+        error: 'Configuration Spotify manquante. Veuillez configurer SPOTIFY_CLIENT_ID et SPOTIFY_CLIENT_SECRET dans les variables d\'environnement.' 
+      });
+    }
+
+    // Obtenir un token d'accès Spotify via Client Credentials Flow
+    const response = await fetch('https://accounts.spotify.com/api/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Authorization': 'Basic ' + Buffer.from(`${SPOTIFY_CLIENT_ID}:${SPOTIFY_CLIENT_SECRET}`).toString('base64')
+      },
+      body: 'grant_type=client_credentials'
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      console.error('❌ [Spotify] Erreur obtention token:', error);
+      return res.status(response.status).json({ 
+        error: 'Erreur lors de l\'obtention du token Spotify',
+        details: error
+      });
+    }
+
+    const data = await response.json();
+    res.json(data);
+  } catch (error) {
+    console.error('❌ [Spotify] Erreur:', error);
+    res.status(500).json({ 
+      error: 'Erreur serveur lors de l\'obtention du token Spotify',
+      message: error.message
+    });
+  }
+});
+
 // Modifier un nasheed (admin seulement)
 app.put('/api/nasheeds/:id', authenticateJWT, requireAdmin, async (req, res) => {
   try {
