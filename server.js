@@ -1930,32 +1930,105 @@ app.post('/admin/bots/:botId/toggle', authenticateJWT, requireAdmin, async (req,
 // Récupérer tous les nasheeds actifs
 app.get('/api/nasheeds', authenticateJWT, async (req, res) => {
   try {
+    console.log('📥 [Backend] Récupération nasheeds');
     const [rows] = await mysqlPool.execute(
       'SELECT * FROM nasheeds WHERE is_active = TRUE ORDER BY created_at DESC'
     );
+    console.log('✅ [Backend] Nasheeds récupérés:', rows.length);
     res.json({ nasheeds: rows });
   } catch (error) {
-    console.error('Erreur récupération nasheeds:', error);
-    res.status(500).json({ message: 'Erreur serveur' });
+    console.error('❌ [Backend] Erreur récupération nasheeds:', error);
+    console.error('❌ [Backend] Erreur message:', error.message);
+    console.error('❌ [Backend] Erreur code:', error.code);
+    res.status(500).json({ 
+      message: 'Erreur serveur',
+      error: error.message,
+      code: error.code
+    });
   }
 });
 
 // Ajouter un nasheed (admin seulement)
 app.post('/api/nasheeds', authenticateJWT, requireAdmin, async (req, res) => {
   try {
+    console.log('📤 [Backend] Ajout nasheed - Body:', req.body);
+    console.log('📤 [Backend] Ajout nasheed - User:', req.user);
+    
     const { title, artist, audio_url, cover_image_url, description, duration, category, language } = req.body;
     if (!title || !audio_url) {
       return res.status(400).json({ message: 'Titre et URL audio sont requis.' });
     }
+    
     const userId = req.user.id;
+    console.log('📤 [Backend] Ajout nasheed - UserId:', userId);
+    
+    // Vérifier que la table existe, sinon la créer
+    try {
+      await mysqlPool.execute('SELECT 1 FROM nasheeds LIMIT 1');
+      console.log('✅ [Backend] Table nasheeds existe');
+    } catch (tableError: any) {
+      if (tableError.code === 'ER_NO_SUCH_TABLE') {
+        console.log('⚠️ [Backend] Table nasheeds n\'existe pas, création...');
+        await mysqlPool.execute(`
+          CREATE TABLE IF NOT EXISTS nasheeds (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            title VARCHAR(255) NOT NULL COMMENT 'Titre du nasheed',
+            artist VARCHAR(255) DEFAULT NULL COMMENT 'Artiste/Chanteur',
+            audio_url VARCHAR(500) NOT NULL COMMENT 'URL de l''audio',
+            cover_image_url VARCHAR(500) DEFAULT NULL COMMENT 'URL de l''image de couverture',
+            description TEXT DEFAULT NULL COMMENT 'Description du nasheed',
+            duration INT DEFAULT NULL COMMENT 'Durée en secondes',
+            category VARCHAR(100) DEFAULT 'general' COMMENT 'Catégorie (general, praise, dua, etc.)',
+            language VARCHAR(50) DEFAULT 'ar' COMMENT 'Langue (ar, en, fr, etc.)',
+            is_active BOOLEAN DEFAULT TRUE COMMENT 'Nasheed actif ou non',
+            created_by VARCHAR(36) DEFAULT NULL COMMENT 'ID de l''admin qui a créé',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_category (category),
+            INDEX idx_language (language),
+            INDEX idx_is_active (is_active),
+            INDEX idx_created_at (created_at)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+          COMMENT='Table des nasheeds disponibles dans la bibliothèque'
+        `);
+        console.log('✅ [Backend] Table nasheeds créée');
+      } else {
+        throw tableError;
+      }
+    }
+    
+    const values = [
+      title, 
+      artist || null, 
+      audio_url, 
+      cover_image_url || null, 
+      description || null, 
+      duration ? parseInt(duration) : null, 
+      category || 'general', 
+      language || 'ar', 
+      userId
+    ];
+    
+    console.log('📤 [Backend] Ajout nasheed - Values:', values);
+    
     const [result] = await mysqlPool.execute(
       'INSERT INTO nasheeds (title, artist, audio_url, cover_image_url, description, duration, category, language, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [title, artist || null, audio_url, cover_image_url || null, description || null, duration || null, category || 'general', language || 'ar', userId]
+      values
     );
+    
+    console.log('✅ [Backend] Nasheed ajouté avec succès - ID:', result.insertId);
     res.json({ success: true, id: result.insertId, message: 'Nasheed ajouté avec succès' });
   } catch (error) {
-    console.error('Erreur ajout nasheed:', error);
-    res.status(500).json({ message: 'Erreur serveur' });
+    console.error('❌ [Backend] Erreur ajout nasheed:', error);
+    console.error('❌ [Backend] Erreur stack:', error.stack);
+    console.error('❌ [Backend] Erreur message:', error.message);
+    console.error('❌ [Backend] Erreur code:', error.code);
+    res.status(500).json({ 
+      message: 'Erreur serveur', 
+      error: error.message,
+      code: error.code,
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 });
 
