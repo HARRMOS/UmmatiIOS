@@ -2138,6 +2138,103 @@ app.put('/api/nasheeds/:id', authenticateJWT, requireAdmin, async (req, res) => 
   }
 });
 
+// ===================== ROUTES SPOTIFY USER AUTH =====================
+// Obtenir le Client ID Spotify (pour l'authentification utilisateur)
+app.get('/api/spotify/client-id', authenticateJWT, async (req, res) => {
+  try {
+    const SPOTIFY_CLIENT_ID = process.env.SPOTIFY_CLIENT_ID;
+    if (!SPOTIFY_CLIENT_ID) {
+      return res.status(500).json({ error: 'Spotify Client ID non configuré' });
+    }
+    res.json({ client_id: SPOTIFY_CLIENT_ID });
+  } catch (error) {
+    console.error('❌ [Spotify] Erreur récupération Client ID:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Échanger un code d'autorisation contre un token utilisateur Spotify
+app.post('/api/spotify/user-token', authenticateJWT, async (req, res) => {
+  try {
+    const { code, redirect_uri } = req.body;
+    const SPOTIFY_CLIENT_ID = process.env.SPOTIFY_CLIENT_ID;
+    const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
+
+    if (!SPOTIFY_CLIENT_ID || !SPOTIFY_CLIENT_SECRET) {
+      return res.status(500).json({ error: 'Configuration Spotify manquante' });
+    }
+
+    if (!code || !redirect_uri) {
+      return res.status(400).json({ error: 'Code et redirect_uri requis' });
+    }
+
+    // Échanger le code contre un token
+    const response = await fetch('https://accounts.spotify.com/api/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Authorization': 'Basic ' + Buffer.from(`${SPOTIFY_CLIENT_ID}:${SPOTIFY_CLIENT_SECRET}`).toString('base64')
+      },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        code: code,
+        redirect_uri: redirect_uri,
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      return res.status(response.status).json({ error: errorData.error || 'Erreur lors de l\'échange du code' });
+    }
+
+    const tokenData = await response.json();
+    res.json(tokenData);
+  } catch (error) {
+    console.error('❌ [Spotify] Erreur échange token utilisateur:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Rafraîchir un token utilisateur Spotify
+app.post('/api/spotify/refresh-token', authenticateJWT, async (req, res) => {
+  try {
+    const { refresh_token } = req.body;
+    const SPOTIFY_CLIENT_ID = process.env.SPOTIFY_CLIENT_ID;
+    const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
+
+    if (!SPOTIFY_CLIENT_ID || !SPOTIFY_CLIENT_SECRET) {
+      return res.status(500).json({ error: 'Configuration Spotify manquante' });
+    }
+
+    if (!refresh_token) {
+      return res.status(400).json({ error: 'refresh_token requis' });
+    }
+
+    const response = await fetch('https://accounts.spotify.com/api/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Authorization': 'Basic ' + Buffer.from(`${SPOTIFY_CLIENT_ID}:${SPOTIFY_CLIENT_SECRET}`).toString('base64')
+      },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: refresh_token,
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      return res.status(response.status).json({ error: errorData.error || 'Erreur lors du rafraîchissement' });
+    }
+
+    const tokenData = await response.json();
+    res.json(tokenData);
+  } catch (error) {
+    console.error('❌ [Spotify] Erreur rafraîchissement token:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 // Supprimer un nasheed (admin seulement)
 app.delete('/api/nasheeds/:id', authenticateJWT, requireAdmin, async (req, res) => {
   try {
