@@ -173,6 +173,8 @@ if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
   console.error('⚠️  L\'authentification Google ne fonctionnera pas sans ces variables');
 }
 
+// GoogleStrategy sera configuré dynamiquement dans la route /auth/google
+// On garde une instance par défaut pour la compatibilité
 passport.use(new GoogleStrategy({
   clientID: GOOGLE_CLIENT_ID,
   clientSecret: GOOGLE_CLIENT_SECRET,
@@ -241,9 +243,32 @@ app.get('/auth/status', authenticateJWT, async (req, res) => {
 });
 
 // Route pour initier l'authentification Google
-app.get('/auth/google',
-  passport.authenticate('google', { scope: ['profile', 'email'] })
-);
+app.get('/auth/google', (req, res, next) => {
+  // Détecter si c'est une requête mobile
+  const platform = req.query.platform;
+  const isMobile = platform === 'mobile' || 
+                   req.headers['user-agent']?.includes('Capacitor') ||
+                   req.headers['user-agent']?.includes('Mobile');
+  
+  // Pour mobile, utiliser le redirect URI spécial Google
+  // Format: com.googleusercontent.apps.<CLIENT_ID>:/auth/callback
+  // Extraire l'ID du client (partie avant .apps.googleusercontent.com)
+  const clientIdOnly = GOOGLE_CLIENT_ID.split('.apps.googleusercontent.com')[0];
+  const redirectUriMobile = `com.googleusercontent.apps.${clientIdOnly}:/auth/callback`;
+  const redirectUriWeb = `${BACKEND_URL}/auth/google/callback`;
+  
+  const redirectUri = isMobile ? redirectUriMobile : redirectUriWeb;
+  
+  console.log('🔐 [OAuth] Platform:', platform || 'web');
+  console.log('🔐 [OAuth] Redirect URI:', redirectUri);
+  
+  // Passer le redirect URI à Passport
+  passport.authenticate('google', { 
+    scope: ['profile', 'email'],
+    callbackURL: redirectUri,
+    state: req.query.state
+  })(req, res, next);
+});
 // Route de callback après l'authentification Google
 app.get('/auth/google/callback',
   passport.authenticate('google', { session: false, failureRedirect: '/login' }),
@@ -299,6 +324,84 @@ app.get('/auth/google/callback',
     }
   }
 );
+
+// Route pour échanger le code d'autorisation OAuth contre un JWT (pour apps mobiles avec @byteowls/capacitor-oauth2)
+app.post('/auth/google/exchange', async (req, res) => {
+  try {
+    const { code } = req.body;
+    
+    if (!code) {
+      return res.status(400).json({ error: 'Code d\'autorisation manquant' });
+    }
+    
+    console.log('🔄 [OAuth Exchange] Échange du code contre un token...');
+    
+    // Échanger le code contre un access token via Google
+    const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        code: code,
+        client_id: GOOGLE_CLIENT_ID,
+        client_secret: GOOGLE_CLIENT_SECRET,
+        redirect_uri: `com.googleusercontent.apps.${GOOGLE_CLIENT_ID}:/auth/callback`,
+        grant_type: 'authorization_code',
+      }),
+    });
+    
+    if (!tokenResponse.ok) {
+      const error = await tokenResponse.text();
+      console.error('❌ [OAuth Exchange] Erreur Google:', error);
+      return res.status(400).json({ error: 'Échec de l\'échange du code', details: error });
+    }
+    
+    const tokenData = await tokenResponse.json();
+    const accessToken = tokenData.access_token;
+    
+    if (!accessToken) {
+      return res.status(400).json({ error: 'Access token non reçu de Google' });
+    }
+    
+    // Récupérer les informations du profil utilisateur
+    const profileResponse = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+    
+    if (!profileResponse.ok) {
+      return res.status(400).json({ error: 'Échec de la récupération du profil' });
+    }
+    
+    const profile = await profileResponse.json();
+    
+    // Créer ou récupérer l'utilisateur
+    const user = await findOrCreateUser(profile.id, profile.name, profile.email);
+    
+    // Générer un JWT pour l'utilisateur
+    const jwtToken = jwt.sign(
+      { id: user.id, email: user.email },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+    
+    console.log('✅ [OAuth Exchange] Token JWT généré pour:', user.email);
+    
+    res.json({ 
+      token: jwtToken,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name || profile.name,
+      }
+    });
+  } catch (error) {
+    console.error('❌ [OAuth Exchange] Erreur:', error);
+    res.status(500).json({ error: 'Erreur lors de l\'échange du code', details: error.message });
+  }
+});
 
 // Route pour le callback mobile - page HTML qui sauvegarde le token et ferme le navigateur
 app.get('/auth/mobile-callback', (req, res) => {
