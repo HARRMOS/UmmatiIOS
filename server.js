@@ -2153,6 +2153,34 @@ app.get('/api/spotify/client-id', authenticateJWT, async (req, res) => {
   }
 });
 
+// Route de callback Spotify (pour redirection depuis Spotify OAuth)
+// Cette route reçoit le callback de Spotify et redirige vers le frontend
+app.get('/spotify/callback', async (req, res) => {
+  try {
+    const { code, error } = req.query;
+    const FRONTEND_URL = process.env.FRONTEND_URL || 'https://ummati.pro';
+    
+    if (error) {
+      console.error('❌ [Spotify Callback] Erreur OAuth:', error);
+      // Rediriger vers le frontend avec l'erreur
+      return res.redirect(`${FRONTEND_URL}/spotify/callback?error=${encodeURIComponent(error)}`);
+    }
+
+    if (!code) {
+      console.error('❌ [Spotify Callback] Code manquant');
+      return res.redirect(`${FRONTEND_URL}/spotify/callback?error=no_code`);
+    }
+
+    console.log('✅ [Spotify Callback] Code reçu, redirection vers frontend');
+    // Rediriger vers le frontend avec le code
+    res.redirect(`${FRONTEND_URL}/spotify/callback?code=${code}`);
+  } catch (error) {
+    console.error('❌ [Spotify Callback] Erreur:', error);
+    const FRONTEND_URL = process.env.FRONTEND_URL || 'https://ummati.pro';
+    res.redirect(`${FRONTEND_URL}/spotify/callback?error=server_error`);
+  }
+});
+
 // Échanger un code d'autorisation contre un token utilisateur Spotify
 app.post('/api/spotify/user-token', authenticateJWT, async (req, res) => {
   try {
