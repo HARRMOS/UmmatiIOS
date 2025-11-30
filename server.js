@@ -96,7 +96,7 @@ const allowedOrigins = [
   'https://www.ummati.pro',
   'https://quran-pro.harrmos.com',
   'https://ummati.pro',
-  'https://appislamic.onrender.com',
+  'https://ummatiios.onrender.com',
   'http://localhost:5173',
   'http://localhost:3000',
   "capacitor://localhost",
@@ -147,7 +147,7 @@ const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 const JWT_SECRET = process.env.JWT_SECRET || 'une_clé_ultra_secrète';
 
 // Utiliser TOUJOURS Render (pas de localhost)
-const BACKEND_URL = process.env.BACKEND_URL || 'https://appislamic.onrender.com';
+const BACKEND_URL = process.env.BACKEND_URL || 'https://ummatiios.onrender.com';
 const FRONTEND_URL = process.env.FRONTEND_URL || 'https://ummati.pro';
 const isDevelopment = false; // Toujours en production (Render)
 
