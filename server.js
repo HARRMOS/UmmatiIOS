@@ -337,6 +337,13 @@ app.post('/auth/google/exchange', async (req, res) => {
     console.log('🔄 [OAuth Exchange] Échange du code contre un token...');
     
     // Échanger le code contre un access token via Google
+    // Extraire l'ID du client (partie avant .apps.googleusercontent.com)
+    const clientIdOnly = GOOGLE_CLIENT_ID.split('.apps.googleusercontent.com')[0];
+    const redirectUriMobile = `com.googleusercontent.apps.${clientIdOnly}:/auth/callback`;
+    
+    console.log('🔄 [OAuth Exchange] Client ID:', clientIdOnly);
+    console.log('🔄 [OAuth Exchange] Redirect URI:', redirectUriMobile);
+    
     const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: {
@@ -346,7 +353,7 @@ app.post('/auth/google/exchange', async (req, res) => {
         code: code,
         client_id: GOOGLE_CLIENT_ID,
         client_secret: GOOGLE_CLIENT_SECRET,
-        redirect_uri: `com.googleusercontent.apps.${GOOGLE_CLIENT_ID}:/auth/callback`,
+        redirect_uri: redirectUriMobile,
         grant_type: 'authorization_code',
       }),
     });
